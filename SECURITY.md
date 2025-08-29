@@ -60,9 +60,18 @@ Content-Type: application/json
 ## 🔒 Rotas Protegidas
 
 ### Rotas que REQUEREM Token JWT:
+
+**Autenticação:**
+- `GET /verify-token` - Verificar se token é válido
+
+**Mensagens:**
 - `POST /send-message` - Enviar mensagens
-- `GET /status` - Status da sessão
-- `GET /my-sessions` - Ver dados da sessão
+- `GET /contacts` - Listar contatos
+- `GET /chats` - Listar conversas  
+- `GET /profile` - Informações do perfil
+- `GET /my-sessions` - Status da sessão
+
+**Gerenciamento:**
 - `POST /logout` - Deslogar WhatsApp
 
 ### Rotas Públicas:

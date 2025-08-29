@@ -473,6 +473,112 @@ class SessionManager {
             message: `Sessão ${clientId} deslogada com sucesso`
         };
     }
+
+    /**
+     * Obtém a lista de contatos do WhatsApp
+     */
+    async getContacts(clientId) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const contacts = await session.getContacts();
+            return contacts.map(contact => ({
+                id: contact.id._serialized,
+                name: contact.name || contact.pushname || 'Sem nome',
+                number: contact.number,
+                isMyContact: contact.isMyContact,
+                isBlocked: contact.isBlocked
+            }));
+        } catch (error) {
+            console.error(`❌ Erro ao obter contatos para ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Obtém a lista de chats do WhatsApp
+     */
+    async getChats(clientId) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const chats = await session.getChats();
+            return chats.map(chat => ({
+                id: chat.id._serialized,
+                name: chat.name,
+                isGroup: chat.isGroup,
+                isReadOnly: chat.isReadOnly,
+                unreadCount: chat.unreadCount,
+                timestamp: chat.timestamp,
+                lastMessage: chat.lastMessage ? {
+                    body: chat.lastMessage.body,
+                    timestamp: chat.lastMessage.timestamp,
+                    from: chat.lastMessage.from
+                } : null
+            }));
+        } catch (error) {
+            console.error(`❌ Erro ao obter chats para ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Obtém informações do perfil do WhatsApp
+     */
+    async getProfileInfo(clientId) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const info = session.info;
+            if (!info) {
+                throw new Error('Informações do perfil não disponíveis');
+            }
+
+            return {
+                wid: info.wid._serialized,
+                me: info.me._serialized,
+                pushname: info.pushname,
+                phone: info.phone ? info.phone.wa_version : null,
+                platform: info.phone ? info.phone.device_manufacturer : null
+            };
+        } catch (error) {
+            console.error(`❌ Erro ao obter info do perfil para ${clientId}:`, error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new SessionManager();

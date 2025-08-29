@@ -322,16 +322,19 @@ router.post("/get-token", async (req, res) => {
 
 /**
  * @swagger
- * /status:
+ * /verify-token:
  *   get:
- *     tags: [messages]
- *     summary: 📊 Status da Sessão
- *     description: Verifica o status da sessão autenticada.
+ *     tags: [auth]
+ *     summary: ✅ Verificar Token
+ *     description: |
+ *       Verifica se o token JWT é válido e retorna informações básicas.
+ *       
+ *       **Útil para**: Validar autenticação no frontend.
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: ✅ Status recuperado
+ *         description: ✅ Token válido
  *         content:
  *           application/json:
  *             schema:
@@ -340,32 +343,35 @@ router.post("/get-token", async (req, res) => {
  *                 status:
  *                   type: string
  *                   example: "ok"
- *                 session:
- *                   $ref: '#/components/schemas/SessionStatus'
+ *                 valid:
+ *                   type: boolean
+ *                   example: true
+ *                 id_cliente:
+ *                   type: string
+ *                   example: "cliente_123"
+ *                 issued_at:
+ *                   type: string
+ *                   example: "2024-01-15T10:30:00Z"
  *       401:
- *         description: 🔒 Token obrigatório
+ *         description: 🔒 Token inválido/expirado
  *       500:
  *         description: 💥 Erro interno
  */
-router.get("/status", authenticateToken, async (req, res) => {
+router.get("/verify-token", authenticateToken, async (req, res) => {
     try {
-        const sessionStatus = await sessionManager.getSessionStatus(req.id_cliente);
-        
         res.json({
             status: "ok",
+            valid: true,
             id_cliente: req.id_cliente,
-            session: sessionStatus
+            issued_at: req.tokenData.generated_at
         });
-        
     } catch (err) {
         res.status(500).json({ 
-            error: "Erro ao verificar status da sessão", 
+            error: "Erro ao verificar token", 
             details: err.message 
         });
     }
 });
-
-
 
 /**
  * @swagger
@@ -546,6 +552,198 @@ router.post("/logout", authenticateToken, async (req, res) => {
         
         res.status(500).json({ 
             error: "Erro ao realizar logout", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /contacts:
+ *   get:
+ *     tags: [messages]
+ *     summary: 📞 Listar Contatos
+ *     description: Obtém a lista de contatos do WhatsApp.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ✅ Contatos recuperados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 total:
+ *                   type: integer
+ *                   example: 150
+ *                 contacts:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "5511999999999@c.us"
+ *                       name:
+ *                         type: string
+ *                         example: "João Silva"
+ *                       number:
+ *                         type: string
+ *                         example: "5511999999999"
+ *                       isMyContact:
+ *                         type: boolean
+ *                       isBlocked:
+ *                         type: boolean
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao obter contatos
+ */
+router.get("/contacts", authenticateToken, async (req, res) => {
+    try {
+        const contacts = await sessionManager.getContacts(req.id_cliente);
+        
+        res.json({
+            status: "ok",
+            total: contacts.length,
+            contacts: contacts
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao obter contatos", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /chats:
+ *   get:
+ *     tags: [messages]
+ *     summary: 💬 Listar Conversas
+ *     description: Obtém a lista de conversas/chats do WhatsApp.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ✅ Conversas recuperadas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 total:
+ *                   type: integer
+ *                   example: 25
+ *                 chats:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "5511999999999@c.us"
+ *                       name:
+ *                         type: string
+ *                         example: "João Silva"
+ *                       isGroup:
+ *                         type: boolean
+ *                       unreadCount:
+ *                         type: integer
+ *                       lastMessage:
+ *                         type: object
+ *                         properties:
+ *                           body:
+ *                             type: string
+ *                           timestamp:
+ *                             type: integer
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao obter conversas
+ */
+router.get("/chats", authenticateToken, async (req, res) => {
+    try {
+        const chats = await sessionManager.getChats(req.id_cliente);
+        
+        res.json({
+            status: "ok",
+            total: chats.length,
+            chats: chats
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao obter conversas", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /profile:
+ *   get:
+ *     tags: [messages]
+ *     summary: 👤 Informações do Perfil
+ *     description: Obtém informações do perfil do WhatsApp autenticado.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ✅ Perfil recuperado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 profile:
+ *                   type: object
+ *                   properties:
+ *                     wid:
+ *                       type: string
+ *                       example: "5511999999999@c.us"
+ *                     pushname:
+ *                       type: string
+ *                       example: "Meu Nome"
+ *                     phone:
+ *                       type: string
+ *                       example: "2.2409.2"
+ *                     platform:
+ *                       type: string
+ *                       example: "android"
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao obter perfil
+ */
+router.get("/profile", authenticateToken, async (req, res) => {
+    try {
+        const profile = await sessionManager.getProfileInfo(req.id_cliente);
+
+        res.json({
+            status: "ok",
+            profile: profile
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao obter informações do perfil", 
             details: err.message,
             id_cliente: req.id_cliente
         });
