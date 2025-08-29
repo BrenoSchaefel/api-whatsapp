@@ -1,34 +1,11 @@
 version: '3.8'
 
 services:
-  # Banco de dados PostgreSQL
-  postgres:
-    image: postgres:15-alpine
-    container_name: whatsapp-postgres
-    environment:
-      POSTGRES_DB: whatsapp_api
-      POSTGRES_USER: whatsapp_user
-      POSTGRES_PASSWORD: whatsapp_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    networks:
-      - whatsapp-network
-    restart: unless-stopped
-
   # API WhatsApp
   whatsapp-api:
     build: .
     container_name: whatsapp-api
     environment:
-      # Banco de dados
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: whatsapp_api
-      DB_USER: whatsapp_user
-      DB_PASS: whatsapp_password
-      
       # Aplicação
       PORT: 3000
       NODE_ENV: production
@@ -43,10 +20,6 @@ services:
       
     ports:
       - "3000:3000"
-    networks:
-      - whatsapp-network
-    depends_on:
-      - postgres
     restart: unless-stopped
     
     # Configurações de segurança e recursos
@@ -67,16 +40,11 @@ services:
       retries: 3
       start_period: 40s
 
-# Volumes nomeados para persistência
+# Volumes nomeados para persistência das sessões WhatsApp
 volumes:
-  postgres_data:
-    driver: local
   whatsapp_sessions:
     driver: local
+    name: whatsapp_sessions
   whatsapp_cache:
     driver: local
-
-# Rede isolada
-networks:
-  whatsapp-network:
-    driver: bridge
+    name: whatsapp_cache

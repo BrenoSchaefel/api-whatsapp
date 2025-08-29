@@ -1,3 +1,9 @@
+// 🗄️ CONFIGURAÇÃO DO BANCO DE DADOS
+// ====================================
+// Este arquivo está comentado pois o banco não está sendo usado no momento.
+// Descomente quando for implementar persistência no futuro.
+
+/*
 const { Sequelize } = require("sequelize");
 require("dotenv").config();
 
@@ -14,3 +20,7 @@ const sequelize = new Sequelize(
 );
 
 module.exports = sequelize;
+*/
+
+// Por enquanto, exporta null para não quebrar imports existentes
+module.exports = null;

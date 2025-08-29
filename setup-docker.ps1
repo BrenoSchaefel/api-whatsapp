@@ -121,7 +121,6 @@ Write-Host ""
 Write-Host "📋 Informações importantes:" -ForegroundColor Cyan
 Write-Host "  • API WhatsApp: http://localhost:3000"
 Write-Host "  • Documentação: http://localhost:3000/api-docs"
-Write-Host "  • PostgreSQL: localhost:5432"
 Write-Host ""
 Write-Host "🔧 Comandos úteis:" -ForegroundColor Cyan
 Write-Host "  • Ver logs: docker-compose logs -f whatsapp-api"

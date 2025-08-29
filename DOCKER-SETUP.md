@@ -18,13 +18,9 @@ docker-compose logs -f whatsapp-api
 
 ### **Container API WhatsApp**
 - **Porta**: `3000`
-- **Volumes**: Sessões persistentes
+- **Volumes**: Sessões WhatsApp persistentes
 - **Healthcheck**: Monitoramento automático
-
-### **Container PostgreSQL**
-- **Porta**: `5432`
-- **Volume**: Dados persistentes
-- **Credenciais**: Configuráveis via environment
+- **Dependências**: Apenas sessões locais (sem banco)
 
 ## 💾 Persistência das Sessões
 
@@ -66,7 +62,6 @@ environment:
 ```yaml
 ports:
   - "8080:3000"  # API na porta 8080
-  - "5433:5432"  # PostgreSQL na porta 5433
 ```
 
 ## 🔒 Segurança em Produção
@@ -75,7 +70,6 @@ ports:
 ```yaml
 environment:
   JWT_SECRET: "gere_uma_chave_de_32_caracteres"
-  POSTGRES_PASSWORD: "senha_muito_segura_123"
 ```
 
 ### **2. Usar HTTPS**
@@ -96,8 +90,7 @@ server {
 
 ### **3. Firewall**
 ```bash
-# Fechar portas desnecessárias
-ufw deny 5432  # PostgreSQL
+# Permitir apenas porta da API
 ufw allow 3000 # API (ou 443 se usar HTTPS)
 ```
 
@@ -162,13 +155,13 @@ docker volume inspect whatsapp_sessions
 docker-compose exec whatsapp-api ls -la /app/.wwebjs_auth
 ```
 
-### **Problema**: Banco não conecta
+### **Problema**: Erro de conectividade
 ```bash
-# Testar conexão
-docker-compose exec whatsapp-api ping postgres
+# Verificar se container está ativo
+docker-compose ps
 
-# Verificar logs do PostgreSQL
-docker-compose logs postgres
+# Testar API diretamente
+curl http://localhost:3000/api-docs
 ```
 
 ## 📊 Health Checks
@@ -181,8 +174,8 @@ O container da API possui healthcheck integrado que verifica se a aplicação es
 # Verificar API
 curl http://localhost:3000/api-docs
 
-# Verificar banco
-docker-compose exec postgres psql -U whatsapp_user -d whatsapp_api -c "SELECT 1;"
+# Verificar logs da aplicação
+docker-compose logs whatsapp-api
 ```
 
 ## 🔄 Atualizações
@@ -206,10 +199,10 @@ As sessões do WhatsApp **não são perdidas** durante atualizações por estare
 
 ✅ **Deploy em 1 comando**  
 ✅ **Sessões persistentes** (não perde QR Codes)  
-✅ **Banco incluído** (PostgreSQL)  
+✅ **Sem dependências externas** (não precisa de banco)  
 ✅ **Healthcheck automático**  
-✅ **Fácil backup/restore**  
-✅ **Isolamento de rede**  
+✅ **Fácil backup/restore das sessões**  
 ✅ **Configuração via environment**  
+✅ **Preparado para futuro** (banco comentado)  
 
-Agora sua API WhatsApp roda de forma **profissional** e **segura** em containers! 🚀
+Agora sua API WhatsApp roda de forma **simples** e **segura** em containers! 🚀
