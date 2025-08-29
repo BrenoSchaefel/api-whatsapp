@@ -7,29 +7,29 @@ const swaggerOptions = {
             title: "🚀 API WhatsApp Business",
             version: "1.0.0",
             description: `
-## 📱 API para Integração com WhatsApp Business
+## 📱 API WhatsApp Business - Segura e Simples
 
-Esta API permite integrar aplicações com o WhatsApp Web de forma programática, oferecendo funcionalidades como:
+Integre aplicações com WhatsApp Web de forma segura usando autenticação JWT.
 
-- 🔐 **Autenticação via QR Code** - Sistema seguro de login
-- 🔄 **Restauração Automática** - Sessões persistentes entre reinicializações  
-- 📊 **Monitoramento** - Status em tempo real das conexões
-- 🛡️ **Gerenciamento de Sessões** - Controle completo do ciclo de vida
+### 🚀 Fluxo de Uso
 
-### 🔧 Como Usar
+1. **Autenticar** → \`GET /auth\` (QR Code + session_key)
+2. **Escanear** → Use o WhatsApp no celular
+3. **Token JWT** → \`POST /get-token\` (com session_key)
+4. **Enviar** → \`POST /send-message\` (com token)
 
-1. **Autenticar**: Use \`GET /auth\` para obter QR Code
-2. **Escanear**: Use o app WhatsApp para escanear o código
-3. **Monitorar**: Use \`GET /status\` para verificar conexão
-4. **Listar**: Use \`GET /sessions\` para ver todas as sessões
+### 🔐 Segurança
 
-### ⚡ Recursos
+- **Session Keys** únicas e temporárias (10 min)
+- **Tokens JWT** com expiração (24h)
+- **Isolamento** total entre clientes
+- **One-time use** para session keys
 
-- ✅ Múltiplas sessões simultâneas
-- ✅ Reconexão automática
-- ✅ Timeouts configuráveis  
-- ✅ Logs detalhados
-- ✅ Estados de conexão em tempo real
+### 📝 Headers Obrigatórios (Rotas Protegidas)
+
+\`\`\`
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+\`\`\`
             `,
             contact: {
                 name: "Suporte API WhatsApp",
@@ -53,10 +53,22 @@ Esta API permite integrar aplicações com o WhatsApp Web de forma programática
         tags: [
             {
                 name: "auth",
-                description: "🔐 **Autenticação e Gerenciamento de Sessões**\n\nEndpoints para autenticar, monitorar e gerenciar sessões do WhatsApp Business."
+                description: "🔐 **Autenticação**\n\nQR Code e obtenção de tokens JWT."
+            },
+            {
+                name: "messages", 
+                description: "📤 **Mensagens** (🔒 JWT)\n\nEnvio de mensagens e gerenciamento da sessão."
             }
         ],
         components: {
+            securitySchemes: {
+                bearerAuth: {
+                    type: "http",
+                    scheme: "bearer",
+                    bearerFormat: "JWT",
+                    description: "Token JWT obtido após autenticação via QR Code"
+                }
+            },
             schemas: {
                 SessionStatus: {
                     type: "object",

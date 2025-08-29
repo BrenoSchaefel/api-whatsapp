@@ -1,108 +1,56 @@
 const express = require("express");
 const router = express.Router();
 const sessionManager = require("../services/sessionManager");
+const { generateToken, optionalAuth, authenticateToken } = require("../middleware/auth");
 
 /**
  * @swagger
  * /auth:
  *   get:
  *     tags: [auth]
- *     summary: 🔐 Autenticar Cliente WhatsApp
+ *     summary: 🔐 Gerar QR Code
  *     description: |
- *       **Autentica um cliente no WhatsApp Business** gerando QR Code ou verificando sessão existente.
+ *       Gera QR Code para autenticação no WhatsApp e retorna session_key.
  *       
- *       ### 🔄 Comportamento:
- *       - **Primeira vez**: Gera QR Code para autenticação
- *       - **Já autenticado**: Retorna status de conexão
- *       - **Desconectado**: Recria sessão automaticamente
- *       
- *       ### ⏱️ Timeout: 30 segundos para geração do QR Code
- *       
- *       ### 💡 Dica: 
- *       Use o app WhatsApp no celular para escanear o QR Code retornado.
+ *       **Próximo passo**: Escaneie o QR Code e use `/get-token` com a session_key.
  *     parameters:
  *       - in: query
  *         name: id_cliente
  *         required: true
  *         schema:
  *           type: string
- *           minLength: 1
- *           maxLength: 50
  *           pattern: '^[a-zA-Z0-9_-]+$'
  *           example: "cliente_123"
- *         description: |
- *           **ID único do cliente** para identificar a sessão.
- *           
- *           - Apenas letras, números, hífens e underscores
- *           - Máximo 50 caracteres
- *           - Case sensitive
+ *         description: ID único do cliente (letras, números, _ e -)
  *     responses:
  *       200:
- *         description: ✅ Autenticação processada com sucesso
+ *         description: ✅ QR Code gerado
  *         content:
  *           application/json:
  *             schema:
- *               oneOf:
- *                 - type: object
- *                   title: "QR Code Gerado"
- *                   properties:
- *                     status:
- *                       type: string
- *                       example: "ok"
- *                     id_cliente:
- *                       type: string
- *                       example: "cliente_123"
- *                     qr_code:
- *                       type: string
- *                       example: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
- *                       description: "QR Code em formato base64 (Data URL)"
- *                     message:
- *                       type: string
- *                       example: "QR Code gerado. Escaneie para autenticar."
- *                     authenticated:
- *                       type: boolean
- *                       example: false
- *                 - type: object
- *                   title: "Já Autenticado"
- *                   properties:
- *                     status:
- *                       type: string
- *                       example: "ok"
- *                     id_cliente:
- *                       type: string
- *                       example: "cliente_123"
- *                     message:
- *                       type: string
- *                       example: "Sessão já está autenticada e conectada."
- *                     authenticated:
- *                       type: boolean
- *                       example: true
- *                     session_state:
- *                       type: string
- *                       example: "CONNECTED"
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 id_cliente:
+ *                   type: string
+ *                   example: "cliente_123"
+ *                 qr_code:
+ *                   type: string
+ *                   description: "QR Code em base64"
+ *                 session_key:
+ *                   type: string
+ *                   description: "Chave para obter JWT (válida 10 min)"
+ *                 key_expires_in:
+ *                   type: string
+ *                   example: "10 minutos"
  *       400:
- *         description: ❌ Parâmetros inválidos
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *             example:
- *               error: "id_cliente é obrigatório"
+ *         description: ❌ id_cliente obrigatório
  *       408:
- *         description: ⏰ Timeout - QR Code não gerado em 30 segundos
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
- *             example:
- *               error: "Timeout aguardando QR Code"
- *               details: "O QR Code não foi gerado dentro do tempo limite de 30 segundos."
+ *         description: ⏰ Timeout QR Code (30s)
  *       500:
- *         description: 💥 Erro interno do servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: 💥 Erro interno
  */
 router.get("/auth", async (req, res) => {
     const { id_cliente } = req.query;
@@ -115,13 +63,14 @@ router.get("/auth", async (req, res) => {
         // Verifica o status real da sessão
         const sessionStatus = await sessionManager.getSessionStatus(id_cliente);
         
-        if (sessionStatus.connected) {
+        if (sessionStatus.connected && sessionManager.isSessionFullyAuthenticated(id_cliente)) {
             return res.json({
                 status: "ok",
                 id_cliente,
-                message: "Sessão já está autenticada e conectada.",
+                message: "Sessão já está autenticada e conectada. Use /get-token com a session_key para obter o token JWT.",
                 authenticated: true,
-                session_state: sessionStatus.state
+                session_state: sessionStatus.state,
+                requires_session_key: true
             });
         }
 
@@ -132,7 +81,7 @@ router.get("/auth", async (req, res) => {
         }
 
         // Cria a sessão se não existir ou se foi destruída
-        await sessionManager.createSession(id_cliente);
+        const { client, sessionKey } = await sessionManager.createSession(id_cliente);
         
         // Aguarda o QR Code ser gerado (máximo 30 segundos)
         const qrCode = await sessionManager.waitForQRCode(id_cliente, 30000);
@@ -141,8 +90,10 @@ router.get("/auth", async (req, res) => {
             status: "ok",
             id_cliente,
             qr_code: qrCode,
-            message: "QR Code gerado. Escaneie para autenticar.",
-            authenticated: false
+            session_key: sessionKey,
+            message: "QR Code gerado. Escaneie para autenticar e use a session_key para obter o token JWT.",
+            authenticated: false,
+            key_expires_in: "10 minutos"
         });
         
     } catch (err) {
@@ -150,8 +101,9 @@ router.get("/auth", async (req, res) => {
             return res.json({
                 status: "ok",
                 id_cliente,
-                message: "Sessão já está autenticada e conectada.",
-                authenticated: true
+                message: "Sessão já está autenticada e conectada. Use /get-token com a session_key para obter o token JWT.",
+                authenticated: true,
+                requires_session_key: true
             });
         }
         
@@ -264,20 +216,145 @@ router.get("/auth", async (req, res) => {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.get("/status", async (req, res) => {
-    const { id_cliente } = req.query;
+/**
+ * @swagger
+ * /get-token:
+ *   post:
+ *     tags: [auth]
+ *     summary: 🔑 Obter Token JWT
+ *     description: |
+ *       Após escanear o QR Code, use a session_key para obter o token JWT.
+ *       
+ *       **Token válido por 24h**. Session_key é consumida após uso.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [id_cliente, session_key]
+ *             properties:
+ *               id_cliente:
+ *                 type: string
+ *                 example: "cliente_123"
+ *               session_key:
+ *                 type: string
+ *                 example: "550e8400-e29b-41d4-a716-446655440000"
+ *                 description: "Recebida em /auth"
+ *     responses:
+ *       200:
+ *         description: ✅ Token obtido ou aguardando
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   enum: ["ok", "pending"]
+ *                 token:
+ *                   type: string
+ *                   description: "JWT (só se status=ok)"
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: ❌ Campos obrigatórios
+ *       401:
+ *         description: 🔒 Session_key inválida/expirada
+ *       500:
+ *         description: 💥 Erro interno
+ */
+router.post("/get-token", async (req, res) => {
+    const { id_cliente, session_key } = req.body;
 
-    if (!id_cliente) {
-        return res.status(400).json({ error: "id_cliente é obrigatório" });
+    if (!id_cliente || !session_key) {
+        return res.status(400).json({ 
+            error: "Campos 'id_cliente' e 'session_key' são obrigatórios" 
+        });
     }
 
     try {
+        // Verifica se a chave da sessão é válida
+        if (!sessionManager.isSessionKeyValid(id_cliente, session_key)) {
+            return res.status(401).json({
+                error: "Chave de sessão inválida ou expirada",
+                message: "A session_key fornecida não é válida ou já expirou. Faça a autenticação novamente."
+            });
+        }
+
         const sessionStatus = await sessionManager.getSessionStatus(id_cliente);
+        
+        // Verifica se a sessão está autenticada
+        if (!sessionStatus.connected || !sessionManager.isSessionFullyAuthenticated(id_cliente)) {
+            return res.json({
+                status: "pending",
+                id_cliente,
+                message: "Sessão ainda não foi autenticada. Escaneie o QR Code primeiro.",
+                session_state: sessionStatus.state
+            });
+        }
+
+        // Consome a chave (one-time use) e gera o token
+        if (!sessionManager.consumeSessionKey(id_cliente, session_key)) {
+            return res.status(401).json({
+                error: "Erro ao processar chave de sessão",
+                message: "A chave não pôde ser processada. Tente novamente."
+            });
+        }
+
+        const token = generateToken(id_cliente);
         
         res.json({
             status: "ok",
             id_cliente,
-            ...sessionStatus
+            token: token,
+            message: "Token JWT gerado com sucesso!",
+            expires_in: "24 horas"
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao gerar token", 
+            details: err.message 
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /status:
+ *   get:
+ *     tags: [messages]
+ *     summary: 📊 Status da Sessão
+ *     description: Verifica o status da sessão autenticada.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ✅ Status recuperado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 session:
+ *                   $ref: '#/components/schemas/SessionStatus'
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro interno
+ */
+router.get("/status", authenticateToken, async (req, res) => {
+    try {
+        const sessionStatus = await sessionManager.getSessionStatus(req.id_cliente);
+        
+        res.json({
+            status: "ok",
+            id_cliente: req.id_cliente,
+            session: sessionStatus
         });
         
     } catch (err) {
@@ -288,31 +365,35 @@ router.get("/status", async (req, res) => {
     }
 });
 
+
+
 /**
  * @swagger
- * /sessions:
- *   get:
- *     tags: [auth]
- *     summary: 📋 Listar Todas as Sessões
- *     description: |
- *       **Lista todas as sessões ativas** com status detalhado de cada uma.
- *       
- *       ### 📊 Dashboard de Sessões:
- *       - **Visão geral**: Total de sessões em memória
- *       - **Status individual**: Estado de cada cliente
- *       - **Monitoramento**: Identifica problemas rapidamente
- *       
- *       ### 🎯 Use Cases:
- *       - **Administração**: Painel de controle de sessões
- *       - **Monitoramento**: Health check de todas as conexões
- *       - **Analytics**: Métricas de uso da API
- *       - **Debugging**: Identificar sessões com problemas
- *       
- *       ### ⚡ Performance:
- *       Esta operação é otimizada e não afeta as sessões existentes.
+ * /send-message:
+ *   post:
+ *     tags: [messages]
+ *     summary: 📤 Enviar Mensagem
+ *     description: Envia mensagem de texto via WhatsApp.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [to, message]
+ *             properties:
+ *               to:
+ *                 type: string
+ *                 example: "5511999999999"
+ *                 description: "Número com código do país"
+ *               message:
+ *                 type: string
+ *                 example: "Olá! Mensagem de teste."
  *     responses:
  *       200:
- *         description: ✅ Lista de sessões recuperada com sucesso
+ *         description: ✅ Mensagem enviada
  *         content:
  *           application/json:
  *             schema:
@@ -321,86 +402,152 @@ router.get("/status", async (req, res) => {
  *                 status:
  *                   type: string
  *                   example: "ok"
- *                 total_sessions:
- *                   type: integer
- *                   minimum: 0
- *                   description: "Número total de sessões em memória"
- *                   example: 3
- *                 sessions:
- *                   type: array
- *                   description: "Array com detalhes de cada sessão"
- *                   items:
- *                     allOf:
- *                       - type: object
- *                         properties:
- *                           id_cliente:
- *                             type: string
- *                             example: "cliente_123"
- *                       - $ref: '#/components/schemas/SessionStatus'
- *             examples:
- *               multiple_sessions:
- *                 summary: "Múltiplas Sessões"
- *                 value:
- *                   status: "ok"
- *                   total_sessions: 3
- *                   sessions:
- *                     - id_cliente: "loja_principal"
- *                       exists: true
- *                       connected: true
- *                       state: "CONNECTED"
- *                       info:
- *                         wid: "5511999999999@c.us"
- *                         pushname: "Loja Principal"
- *                     - id_cliente: "atendimento_01"
- *                       exists: true
- *                       connected: false
- *                       state: "DISCONNECTED"
- *                     - id_cliente: "suporte_24h"
- *                       exists: true
- *                       connected: true
- *                       state: "CONNECTED"
- *                       info:
- *                         wid: "5511888888888@c.us"
- *                         pushname: "Suporte 24h"
- *               no_sessions:
- *                 summary: "Nenhuma Sessão"
- *                 value:
- *                   status: "ok"
- *                   total_sessions: 0
- *                   sessions: []
+ *                 message_id:
+ *                   type: string
+ *                 to:
+ *                   type: string
+ *       400:
+ *         description: ❌ Campos obrigatórios
+ *       401:
+ *         description: 🔒 Token obrigatório
  *       500:
- *         description: 💥 Erro interno do servidor
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *         description: 💥 Erro ao enviar
  */
-router.get("/sessions", async (req, res) => {
-    try {
-        const sessionsList = [];
-        const sessionManager = require("../services/sessionManager");
-        
-        // Pega todas as sessões da memória
-        const activeSessionIds = Array.from(sessionManager.sessions.keys());
-        
-        for (const clientId of activeSessionIds) {
-            const sessionStatus = await sessionManager.getSessionStatus(clientId);
-            sessionsList.push({
-                id_cliente: clientId,
-                ...sessionStatus
-            });
-        }
+router.post("/send-message", authenticateToken, async (req, res) => {
+    const { to, message } = req.body;
 
+    if (!to || !message) {
+        return res.status(400).json({ 
+            error: "Campos 'to' e 'message' são obrigatórios" 
+        });
+    }
+
+    try {
+        const result = await sessionManager.sendMessage(req.id_cliente, to, message);
+        
         res.json({
             status: "ok",
-            total_sessions: sessionsList.length,
-            sessions: sessionsList
+            id_cliente: req.id_cliente,
+            message: "Mensagem enviada com sucesso",
+            to: result.to,
+            sent_message: message,
+            message_id: result.id._serialized
         });
         
     } catch (err) {
         res.status(500).json({ 
-            error: "Erro ao listar sessões", 
+            error: "Erro ao enviar mensagem", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /my-sessions:
+ *   get:
+ *     tags: [messages]
+ *     summary: 👤 Minha Sessão
+ *     description: Retorna dados da sessão do cliente autenticado.
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ✅ Dados recuperados
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 session:
+ *                   $ref: '#/components/schemas/SessionStatus'
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro interno
+ */
+router.get("/my-sessions", authenticateToken, async (req, res) => {
+    try {
+        const sessionStatus = await sessionManager.getSessionStatus(req.id_cliente);
+
+        res.json({
+            status: "ok",
+            id_cliente: req.id_cliente,
+            session: sessionStatus
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao recuperar dados da sessão", 
             details: err.message 
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /logout:
+ *   post:
+ *     tags: [auth]
+ *     summary: 🚪 Deslogar WhatsApp
+ *     description: |
+ *       Desloga e desconecta a sessão do WhatsApp.
+ *       
+ *       **Após logout, será necessário novo QR Code.**
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: ✅ Logout realizado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 message:
+ *                   type: string
+ *                   example: "Sessão deslogada com sucesso"
+ *                 logged_out:
+ *                   type: boolean
+ *                   example: true
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       404:
+ *         description: 📭 Sessão não encontrada
+ *       500:
+ *         description: 💥 Erro no logout
+ */
+router.post("/logout", authenticateToken, async (req, res) => {
+    try {
+        const result = await sessionManager.logoutSession(req.id_cliente);
+
+        res.json({
+            status: "ok",
+            id_cliente: req.id_cliente,
+            message: result.message,
+            logged_out: true
+        });
+        
+    } catch (err) {
+        if (err.message === 'Sessão não encontrada') {
+            return res.status(404).json({
+                error: "Sessão não encontrada",
+                message: "Não há sessão ativa para este cliente",
+                id_cliente: req.id_cliente
+            });
+        }
+        
+        res.status(500).json({ 
+            error: "Erro ao realizar logout", 
+            details: err.message,
+            id_cliente: req.id_cliente
         });
     }
 });

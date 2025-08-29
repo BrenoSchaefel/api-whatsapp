@@ -2,6 +2,7 @@ const { Client, LocalAuth } = require("whatsapp-web.js");
 const QRCode = require("qrcode");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 class SessionManager {
     constructor() {
@@ -9,12 +10,18 @@ class SessionManager {
         this.qrCodes = new Map(); // guarda QR codes por cliente
         this.qrPromises = new Map(); // guarda promises para aguardar QR codes
         this.sessionStates = new Map(); // guarda estado das sessões
+        this.authenticatedSessions = new Map(); // guarda quais sessões estão totalmente autenticadas
+        this.sessionKeys = new Map(); // guarda chaves únicas para cada sessão
+        this.sessionKeyExpiry = new Map(); // guarda quando cada chave expira
     }
 
     async createSession(clientId) {
         if (this.sessions.has(clientId)) {
             return this.sessions.get(clientId);
         }
+
+        // Gera uma chave única para esta sessão (válida por 10 minutos)
+        const sessionKey = this.generateSessionKey(clientId);
 
         // Cria uma promise para aguardar o QR Code
         let qrResolve, qrReject;
@@ -37,7 +44,9 @@ class SessionManager {
         client.initialize();
 
         this.sessions.set(clientId, client);
-        return client;
+        
+        // Retorna o cliente e a chave da sessão
+        return { client, sessionKey };
     }
 
     getSession(clientId) {
@@ -300,6 +309,9 @@ class SessionManager {
             // Remove o QR Code e promise quando a sessão estiver pronta
             this.qrCodes.delete(clientId);
             this.qrPromises.delete(clientId);
+            
+            // Marca que esta sessão está totalmente autenticada e conectada
+            this.setSessionAuthenticated(clientId, true);
         });
 
         client.on("auth_failure", () => {
@@ -315,11 +327,151 @@ class SessionManager {
             // Remove QR codes e promises quando desconectado
             this.qrCodes.delete(clientId);
             this.qrPromises.delete(clientId);
+            // Remove a marca de autenticação
+            this.setSessionAuthenticated(clientId, false);
         });
 
         client.on("message", (msg) => {
             console.log(`📩 [${clientId}] Mensagem de ${msg.from}: ${msg.body}`);
         });
+    }
+
+    /**
+     * Marca uma sessão como autenticada ou não
+     */
+    setSessionAuthenticated(clientId, authenticated) {
+        this.authenticatedSessions.set(clientId, authenticated);
+        console.log(`🔐 Sessão ${clientId} marcada como ${authenticated ? 'autenticada' : 'não autenticada'}`);
+    }
+
+    /**
+     * Verifica se uma sessão está totalmente autenticada e pronta para uso
+     */
+    isSessionFullyAuthenticated(clientId) {
+        return this.authenticatedSessions.get(clientId) === true;
+    }
+
+    /**
+     * Envia uma mensagem usando a sessão do cliente
+     */
+    async sendMessage(clientId, to, message) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            // Formata o número de telefone corretamente
+            const formattedNumber = to.includes('@') ? to : `${to}@c.us`;
+            const result = await session.sendMessage(formattedNumber, message);
+            return result;
+        } catch (error) {
+            console.error(`❌ Erro ao enviar mensagem via ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Gera uma chave única para a sessão
+     */
+    generateSessionKey(clientId) {
+        const sessionKey = crypto.randomUUID();
+        const expiryTime = Date.now() + (10 * 60 * 1000); // 10 minutos
+        
+        this.sessionKeys.set(clientId, sessionKey);
+        this.sessionKeyExpiry.set(clientId, expiryTime);
+        
+        console.log(`🔑 Chave de sessão gerada para ${clientId}: ${sessionKey.substring(0, 8)}...`);
+        return sessionKey;
+    }
+
+    /**
+     * Verifica se a chave da sessão é válida
+     */
+    isSessionKeyValid(clientId, providedKey) {
+        const storedKey = this.sessionKeys.get(clientId);
+        const expiry = this.sessionKeyExpiry.get(clientId);
+        
+        if (!storedKey || !expiry) {
+            return false;
+        }
+        
+        if (Date.now() > expiry) {
+            // Chave expirada, remove
+            this.sessionKeys.delete(clientId);
+            this.sessionKeyExpiry.delete(clientId);
+            console.log(`⏰ Chave de sessão expirada para ${clientId}`);
+            return false;
+        }
+        
+        return storedKey === providedKey;
+    }
+
+    /**
+     * Consome uma chave de sessão (remove após uso para obter token)
+     */
+    consumeSessionKey(clientId, providedKey) {
+        if (!this.isSessionKeyValid(clientId, providedKey)) {
+            return false;
+        }
+        
+        // Remove a chave após o uso (one-time use)
+        this.sessionKeys.delete(clientId);
+        this.sessionKeyExpiry.delete(clientId);
+        
+        console.log(`🗑️ Chave de sessão consumida para ${clientId}`);
+        return true;
+    }
+
+    /**
+     * Limpa chaves expiradas periodicamente
+     */
+    cleanupExpiredKeys() {
+        const now = Date.now();
+        
+        for (const [clientId, expiry] of this.sessionKeyExpiry.entries()) {
+            if (now > expiry) {
+                this.sessionKeys.delete(clientId);
+                this.sessionKeyExpiry.delete(clientId);
+                console.log(`🧹 Chave expirada removida para ${clientId}`);
+            }
+        }
+    }
+
+    /**
+     * Desloga/desconecta uma sessão específica
+     */
+    async logoutSession(clientId) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        try {
+            // Tenta fazer logout graceful se possível
+            if (await this.isSessionConnected(clientId)) {
+                await session.logout();
+                console.log(`🚪 Logout realizado para ${clientId}`);
+            }
+        } catch (error) {
+            console.log(`⚠️ Erro no logout graceful para ${clientId}, forçando desconexão:`, error.message);
+        }
+
+        // Força destruição da sessão
+        await this.destroySession(clientId);
+        
+        return {
+            success: true,
+            message: `Sessão ${clientId} deslogada com sucesso`
+        };
     }
 }
 

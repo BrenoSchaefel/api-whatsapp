@@ -30,5 +30,10 @@ sequelize.authenticate()
         } catch (error) {
             console.error("❌ Erro durante restauração de sessões:", error);
         }
+
+        // Inicia limpeza automática de chaves expiradas (a cada 5 minutos)
+        setInterval(() => {
+            sessionManager.cleanupExpiredKeys();
+        }, 5 * 60 * 1000);
     })
     .catch((err) => console.error("Erro ao conectar no banco:", err));
