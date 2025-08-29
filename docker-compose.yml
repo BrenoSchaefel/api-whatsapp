@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # Banco de dados PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: whatsapp-postgres
+    environment:
+      POSTGRES_DB: whatsapp_api
+      POSTGRES_USER: whatsapp_user
+      POSTGRES_PASSWORD: whatsapp_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - whatsapp-network
+    restart: unless-stopped
+
+  # API WhatsApp
+  whatsapp-api:
+    build: .
+    container_name: whatsapp-api
+    environment:
+      # Banco de dados
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: whatsapp_api
+      DB_USER: whatsapp_user
+      DB_PASS: whatsapp_password
+      
+      # Aplicação
+      PORT: 3000
+      NODE_ENV: production
+      
+      # JWT (ALTERE ESTA CHAVE EM PRODUÇÃO!)
+      JWT_SECRET: sua_chave_super_secreta_jwt_2024_altere_em_producao
+      
+    volumes:
+      # Volume para persistir sessões do WhatsApp
+      - whatsapp_sessions:/app/.wwebjs_auth
+      - whatsapp_cache:/app/.wwebjs_cache
+      
+    ports:
+      - "3000:3000"
+    networks:
+      - whatsapp-network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    
+    # Configurações de segurança e recursos
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    
+    # Healthcheck
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api-docs || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Volumes nomeados para persistência
+volumes:
+  postgres_data:
+    driver: local
+  whatsapp_sessions:
+    driver: local
+  whatsapp_cache:
+    driver: local
+
+# Rede isolada
+networks:
+  whatsapp-network:
+    driver: bridge

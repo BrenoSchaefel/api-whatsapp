@@ -447,7 +447,7 @@ router.post("/send-message", authenticateToken, async (req, res) => {
  * @swagger
  * /my-sessions:
  *   get:
- *     tags: [messages]
+ *     tags: [auth]
  *     summary: 👤 Minha Sessão
  *     description: Retorna dados da sessão do cliente autenticado.
  *     security:

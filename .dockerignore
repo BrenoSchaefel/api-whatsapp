@@ -1,0 +1,50 @@
+# Dependências
+node_modules
+npm-debug.log*
+
+# Arquivos temporários
+.tmp
+*.tmp
+
+# Logs
+logs
+*.log
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Documentação
+README.md
+SECURITY.md
+example-usage.js
+
+# Sessões locais (não incluir no build - usar volumes)
+.wwebjs_auth
+.wwebjs_cache
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Build artifacts
+dist
+build
