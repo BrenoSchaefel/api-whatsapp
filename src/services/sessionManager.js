@@ -579,6 +579,237 @@ class SessionManager {
             throw error;
         }
     }
+
+    /**
+     * Obtém histórico de mensagens de um chat
+     */
+    async getChatMessages(clientId, chatId, limit = 50) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const chat = await session.getChatById(chatId);
+            const messages = await chat.fetchMessages({ limit });
+            
+            return messages.map(msg => ({
+                id: msg.id._serialized,
+                body: msg.body,
+                from: msg.from,
+                to: msg.to,
+                timestamp: msg.timestamp,
+                type: msg.type,
+                isFromMe: msg.fromMe,
+                hasMedia: msg.hasMedia,
+                ack: msg.ack // Status de entrega
+            }));
+        } catch (error) {
+            console.error(`❌ Erro ao obter mensagens do chat ${chatId} para ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Envia mídia (imagem, documento, etc)
+     */
+    async sendMedia(clientId, to, mediaData, caption = '') {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const { MessageMedia } = require('whatsapp-web.js');
+            const formattedNumber = to.includes('@') ? to : `${to}@c.us`;
+            
+            let media;
+            if (mediaData.url) {
+                // Mídia via URL
+                media = await MessageMedia.fromUrl(mediaData.url);
+            } else if (mediaData.base64) {
+                // Mídia via base64
+                media = new MessageMedia(mediaData.mimetype, mediaData.base64, mediaData.filename);
+            } else {
+                throw new Error('Formato de mídia inválido. Use url ou base64');
+            }
+
+            const result = await session.sendMessage(formattedNumber, media, { caption });
+            return result;
+        } catch (error) {
+            console.error(`❌ Erro ao enviar mídia via ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Verifica se um número está registrado no WhatsApp
+     */
+    async checkNumberStatus(clientId, number) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const formattedNumber = number.includes('@') ? number : `${number}@c.us`;
+            const isRegistered = await session.isRegisteredUser(formattedNumber);
+            
+            return {
+                number: number,
+                isRegistered: isRegistered,
+                formattedNumber: formattedNumber
+            };
+        } catch (error) {
+            console.error(`❌ Erro ao verificar número ${number} para ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Bloqueia ou desbloqueia um contato
+     */
+    async blockContact(clientId, contactId, block = true) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const formattedNumber = contactId.includes('@') ? contactId : `${contactId}@c.us`;
+            
+            if (block) {
+                await session.blockContact(formattedNumber);
+            } else {
+                await session.unblockContact(formattedNumber);
+            }
+
+            return {
+                success: true,
+                action: block ? 'blocked' : 'unblocked',
+                contact: formattedNumber
+            };
+        } catch (error) {
+            console.error(`❌ Erro ao ${block ? 'bloquear' : 'desbloquear'} contato ${contactId} para ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Cria um grupo
+     */
+    async createGroup(clientId, groupName, participants) {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            // Formatar participantes
+            const formattedParticipants = participants.map(p => 
+                p.includes('@') ? p : `${p}@c.us`
+            );
+
+            const group = await session.createGroup(groupName, formattedParticipants);
+            
+            return {
+                id: group.gid._serialized,
+                name: groupName,
+                participants: formattedParticipants,
+                createdAt: new Date().toISOString()
+            };
+        } catch (error) {
+            console.error(`❌ Erro ao criar grupo para ${clientId}:`, error);
+            throw error;
+        }
+    }
+
+    /**
+     * Adiciona ou remove participantes de um grupo
+     */
+    async manageGroupParticipants(clientId, groupId, participants, action = 'add') {
+        const session = this.sessions.get(clientId);
+        if (!session) {
+            throw new Error('Sessão não encontrada');
+        }
+
+        if (!this.isSessionFullyAuthenticated(clientId)) {
+            throw new Error('Sessão não está autenticada');
+        }
+
+        if (!await this.isSessionConnected(clientId)) {
+            throw new Error('Sessão não está conectada');
+        }
+
+        try {
+            const chat = await session.getChatById(groupId);
+            
+            // Formatar participantes
+            const formattedParticipants = participants.map(p => 
+                p.includes('@') ? p : `${p}@c.us`
+            );
+
+            let result;
+            if (action === 'add') {
+                result = await chat.addParticipants(formattedParticipants);
+            } else if (action === 'remove') {
+                result = await chat.removeParticipants(formattedParticipants);
+            } else {
+                throw new Error('Ação inválida. Use "add" ou "remove"');
+            }
+
+            return {
+                success: true,
+                action: action,
+                groupId: groupId,
+                participants: formattedParticipants,
+                result: result
+            };
+        } catch (error) {
+            console.error(`❌ Erro ao ${action} participantes no grupo ${groupId} para ${clientId}:`, error);
+            throw error;
+        }
+    }
 }
 
 module.exports = new SessionManager();

@@ -750,4 +750,457 @@ router.get("/profile", authenticateToken, async (req, res) => {
     }
 });
 
+/**
+ * @swagger
+ * /chats/{chatId}/messages:
+ *   get:
+ *     tags: [messages]
+ *     summary: 📜 Histórico de Mensagens
+ *     description: Obtém o histórico de mensagens de um chat específico.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: chatId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "5511999999999@c.us"
+ *         description: ID do chat
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *           minimum: 1
+ *           maximum: 100
+ *         description: Número máximo de mensagens
+ *     responses:
+ *       200:
+ *         description: ✅ Mensagens recuperadas
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 chatId:
+ *                   type: string
+ *                 total:
+ *                   type: integer
+ *                 messages:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       body:
+ *                         type: string
+ *                       from:
+ *                         type: string
+ *                       timestamp:
+ *                         type: integer
+ *                       isFromMe:
+ *                         type: boolean
+ *                       hasMedia:
+ *                         type: boolean
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao obter mensagens
+ */
+router.get("/chats/:chatId/messages", authenticateToken, async (req, res) => {
+    const { chatId } = req.params;
+    const { limit = 50 } = req.query;
+
+    try {
+        const messages = await sessionManager.getChatMessages(req.id_cliente, chatId, parseInt(limit));
+        
+        res.json({
+            status: "ok",
+            chatId: chatId,
+            total: messages.length,
+            messages: messages
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao obter mensagens", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /send-media:
+ *   post:
+ *     tags: [messages]
+ *     summary: 🖼️ Enviar Mídia
+ *     description: |
+ *       Envia mídia (imagem, documento, áudio, vídeo) via WhatsApp.
+ *       
+ *       **Formatos suportados**: JPG, PNG, GIF, PDF, MP4, MP3, etc.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [to, media]
+ *             properties:
+ *               to:
+ *                 type: string
+ *                 example: "5511999999999"
+ *               media:
+ *                 type: object
+ *                 oneOf:
+ *                   - properties:
+ *                       url:
+ *                         type: string
+ *                         example: "https://example.com/image.jpg"
+ *                   - properties:
+ *                       base64:
+ *                         type: string
+ *                         example: "data:image/jpeg;base64,/9j/4AAQ..."
+ *                       mimetype:
+ *                         type: string
+ *                         example: "image/jpeg"
+ *                       filename:
+ *                         type: string
+ *                         example: "foto.jpg"
+ *               caption:
+ *                 type: string
+ *                 example: "Legenda da imagem"
+ *     responses:
+ *       200:
+ *         description: ✅ Mídia enviada
+ *       400:
+ *         description: ❌ Dados inválidos
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao enviar mídia
+ */
+router.post("/send-media", authenticateToken, async (req, res) => {
+    const { to, media, caption = '' } = req.body;
+
+    if (!to || !media) {
+        return res.status(400).json({ 
+            error: "Campos 'to' e 'media' são obrigatórios" 
+        });
+    }
+
+    try {
+        const result = await sessionManager.sendMedia(req.id_cliente, to, media, caption);
+        
+        res.json({
+            status: "ok",
+            id_cliente: req.id_cliente,
+            message: "Mídia enviada com sucesso",
+            to: result.to,
+            message_id: result.id._serialized,
+            caption: caption
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao enviar mídia", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /check-number:
+ *   post:
+ *     tags: [messages]
+ *     summary: ✅ Verificar Número
+ *     description: Verifica se um número está registrado no WhatsApp.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [number]
+ *             properties:
+ *               number:
+ *                 type: string
+ *                 example: "5511999999999"
+ *                 description: "Número com código do país"
+ *     responses:
+ *       200:
+ *         description: ✅ Número verificado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 number:
+ *                   type: string
+ *                 isRegistered:
+ *                   type: boolean
+ *                 formattedNumber:
+ *                   type: string
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao verificar número
+ */
+router.post("/check-number", authenticateToken, async (req, res) => {
+    const { number } = req.body;
+
+    if (!number) {
+        return res.status(400).json({ 
+            error: "Campo 'number' é obrigatório" 
+        });
+    }
+
+    try {
+        const result = await sessionManager.checkNumberStatus(req.id_cliente, number);
+        
+        res.json({
+            status: "ok",
+            ...result
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao verificar número", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /contacts/{contactId}/block:
+ *   post:
+ *     tags: [messages]
+ *     summary: 🚫 Bloquear/Desbloquear
+ *     description: Bloqueia ou desbloqueia um contato.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: contactId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "5511999999999"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               block:
+ *                 type: boolean
+ *                 example: true
+ *                 description: "true para bloquear, false para desbloquear"
+ *     responses:
+ *       200:
+ *         description: ✅ Ação realizada
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 action:
+ *                   type: string
+ *                   enum: ["blocked", "unblocked"]
+ *                 contact:
+ *                   type: string
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro na operação
+ */
+router.post("/contacts/:contactId/block", authenticateToken, async (req, res) => {
+    const { contactId } = req.params;
+    const { block = true } = req.body;
+
+    try {
+        const result = await sessionManager.blockContact(req.id_cliente, contactId, block);
+        
+        res.json({
+            status: "ok",
+            ...result
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: `Erro ao ${block ? 'bloquear' : 'desbloquear'} contato`, 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /groups:
+ *   post:
+ *     tags: [messages]
+ *     summary: 👥 Criar Grupo
+ *     description: Cria um novo grupo no WhatsApp.
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, participants]
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 example: "Meu Grupo Novo"
+ *               participants:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["5511999999999", "5511888888888"]
+ *                 description: "Lista de números dos participantes"
+ *     responses:
+ *       200:
+ *         description: ✅ Grupo criado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "ok"
+ *                 group:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     participants:
+ *                       type: array
+ *                     createdAt:
+ *                       type: string
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao criar grupo
+ */
+router.post("/groups", authenticateToken, async (req, res) => {
+    const { name, participants } = req.body;
+
+    if (!name || !participants || !Array.isArray(participants)) {
+        return res.status(400).json({ 
+            error: "Campos 'name' e 'participants' (array) são obrigatórios" 
+        });
+    }
+
+    try {
+        const result = await sessionManager.createGroup(req.id_cliente, name, participants);
+        
+        res.json({
+            status: "ok",
+            group: result
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao criar grupo", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
+/**
+ * @swagger
+ * /groups/{groupId}/participants:
+ *   post:
+ *     tags: [messages]
+ *     summary: 👥 Gerenciar Participantes
+ *     description: Adiciona ou remove participantes de um grupo.
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: groupId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "120363123456789012@g.us"
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [participants, action]
+ *             properties:
+ *               participants:
+ *                 type: array
+ *                 items:
+ *                   type: string
+ *                 example: ["5511999999999"]
+ *               action:
+ *                 type: string
+ *                 enum: ["add", "remove"]
+ *                 example: "add"
+ *     responses:
+ *       200:
+ *         description: ✅ Participantes gerenciados
+ *       401:
+ *         description: 🔒 Token obrigatório
+ *       500:
+ *         description: 💥 Erro ao gerenciar participantes
+ */
+router.post("/groups/:groupId/participants", authenticateToken, async (req, res) => {
+    const { groupId } = req.params;
+    const { participants, action } = req.body;
+
+    if (!participants || !Array.isArray(participants) || !action) {
+        return res.status(400).json({ 
+            error: "Campos 'participants' (array) e 'action' são obrigatórios" 
+        });
+    }
+
+    try {
+        const result = await sessionManager.manageGroupParticipants(req.id_cliente, groupId, participants, action);
+
+        res.json({
+            status: "ok",
+            ...result
+        });
+        
+    } catch (err) {
+        res.status(500).json({ 
+            error: "Erro ao gerenciar participantes", 
+            details: err.message,
+            id_cliente: req.id_cliente
+        });
+    }
+});
+
 module.exports = router;

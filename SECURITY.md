@@ -65,10 +65,22 @@ Content-Type: application/json
 - `GET /verify-token` - Verificar se token é válido
 
 **Mensagens:**
-- `POST /send-message` - Enviar mensagens
+- `POST /send-message` - Enviar mensagens de texto
+- `POST /send-media` - Enviar mídia (imagens, docs, vídeos)
+- `GET /chats/{chatId}/messages` - Histórico de mensagens
+- `POST /check-number` - Verificar se número existe no WhatsApp
+
+**Contatos & Chats:**
 - `GET /contacts` - Listar contatos
 - `GET /chats` - Listar conversas  
 - `GET /profile` - Informações do perfil
+- `POST /contacts/{contactId}/block` - Bloquear/desbloquear contatos
+
+**Grupos:**
+- `POST /groups` - Criar grupos
+- `POST /groups/{groupId}/participants` - Gerenciar participantes
+
+**Sessão:**
 - `GET /my-sessions` - Status da sessão
 
 **Gerenciamento:**
